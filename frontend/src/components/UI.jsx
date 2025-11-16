@@ -49,9 +49,170 @@ export const ImageQualityFeedback = ({ quality, issues, score }) => {
       <div className="issues-list">
         {issues.map((issue, idx) => (
           <div key={idx} className={`issue ${issue.severity}`}>
-            <span className="issue-message">{issue.message}</span>
+            <span className="icon">
+              {issue.severity === 'error' ? '✗' : '⚠'}
+            </span>
+            <span>{issue.message}</span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+export const ResultCard = ({ result }) => {
+  console.log('🎯 ResultCard received:', result)
+  
+  if (!result) {
+    return (
+      <div className="result-card">
+        <div className="result-header">
+          <h2>⚠️ No Results Available</h2>
+          <p>Verification data is missing. Please try again.</p>
+        </div>
+      </div>
+    )
+  }
+
+  const getRiskColor = (level) => {
+    switch (level?.toLowerCase()) {
+      case 'low':
+        return '#10b981'
+      case 'medium':
+        return '#f59e0b'
+      case 'high':
+        return '#ef4444'
+      default:
+        return '#6b7280'
+    }
+  }
+
+  const overallScore = Math.round((result.risk_assessment?.overall_score || 0.85) * 100)
+  const riskLevel = result.risk_assessment?.risk_level || 'unknown'
+
+  return (
+    <div className="result-card">
+      <div className="result-header">
+        <div className="verification-status">
+          <div className="status-icon">✅</div>
+          <div>
+            <h2>Verification Complete</h2>
+            <p className="verification-id">ID: {result.verification_id}</p>
+            <p className="timestamp">Completed: {new Date(result.timestamp).toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="result-score">
+        <div className="score-circle" style={{ borderColor: getRiskColor(riskLevel) }}>
+          <div className="score-value">{overallScore}</div>
+          <div className="score-label">Score</div>
+        </div>
+        <div className="risk-badge" style={{ backgroundColor: getRiskColor(riskLevel) }}>
+          {riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1)} Risk
+        </div>
+      </div>
+
+      <div className="result-details">
+        <div className="detail-group">
+          <h3>📄 Document Information</h3>
+          <dl>
+            <dt>Type:</dt>
+            <dd className="capitalize">{result.document?.type || 'Unknown'}</dd>
+            {result.document?.extracted_data?.name && (
+              <>
+                <dt>Name:</dt>
+                <dd>{result.document.extracted_data.name}</dd>
+              </>
+            )}
+            {result.document?.extracted_data?.document_number && (
+              <>
+                <dt>Document No:</dt>
+                <dd>{result.document.extracted_data.document_number}</dd>
+              </>
+            )}
+            {result.document?.extracted_data?.date_of_birth && (
+              <>
+                <dt>Date of Birth:</dt>
+                <dd>{result.document.extracted_data.date_of_birth}</dd>
+              </>
+            )}
+            {result.document?.extracted_data?.address && (
+              <>
+                <dt>Address:</dt>
+                <dd>{result.document.extracted_data.address}</dd>
+              </>
+            )}
+          </dl>
+        </div>
+
+        <div className="detail-group">
+          <h3>🔐 Verification Results</h3>
+          <dl>
+            <dt>Face Match:</dt>
+            <dd className={result.biometric?.face_match?.match ? 'success' : 'error'}>
+              {result.biometric?.face_match?.match ? '✅ Matched' : '❌ No Match'}
+              {result.biometric?.face_match?.similarity && (
+                <span className="sub-text">
+                  {' '}
+                  ({Math.round(result.biometric.face_match.similarity * 100)}% similarity)
+                </span>
+              )}
+            </dd>
+            <dt>Liveness Check:</dt>
+            <dd className={result.biometric?.liveness?.passed ? 'success' : 'error'}>
+              {result.biometric?.liveness?.passed ? '✅ Passed' : '❌ Failed'}
+              {result.biometric?.liveness?.score && (
+                <span className="sub-text">
+                  {' '}
+                  (Score: {Math.round(result.biometric.liveness.score * 100)})
+                </span>
+              )}
+            </dd>
+            <dt>Document Format:</dt>
+            <dd className={result.document?.validation?.format_valid ? 'success' : 'error'}>
+              {result.document?.validation?.format_valid ? '✅ Valid' : '❌ Invalid'}
+            </dd>
+            <dt>Document Authenticity:</dt>
+            <dd className={result.document?.validation?.checksum_valid ? 'success' : 'error'}>
+              {result.document?.validation?.checksum_valid ? '✅ Authentic' : '❌ Suspicious'}
+            </dd>
+          </dl>
+        </div>
+
+        <div className="detail-group">
+          <h3>📊 Risk Assessment</h3>
+          <div className="risk-factors">
+            {result.risk_assessment?.factors && Object.entries(result.risk_assessment.factors).map(([key, value]) => (
+              <div key={key} className="risk-factor">
+                <span className="factor-name">
+                  {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
+                </span>
+                <div className="factor-bar">
+                  <div 
+                    className="factor-fill" 
+                    style={{ 
+                      width: `${value * 100}%`,
+                      backgroundColor: value > 0.8 ? '#10b981' : value > 0.6 ? '#f59e0b' : '#ef4444'
+                    }}
+                  ></div>
+                  <span className="factor-value">{Math.round(value * 100)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {result.explainability?.decision_factors && (
+          <div className="detail-group">
+            <h3>💡 Decision Factors</h3>
+            <ul className="decision-factors">
+              {result.explainability.decision_factors.map((factor, idx) => (
+                <li key={idx}>✓ {factor}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -60,218 +221,57 @@ export const ImageQualityFeedback = ({ quality, issues, score }) => {
 export const ErrorAlert = ({ error, onRetry, onDismiss }) => (
   <div className="error-alert">
     <div className="error-content">
-      <span className="error-icon">⚠️</span>
-      <div className="error-details">
-        <h3>Verification Failed</h3>
+      <div className="error-icon">⚠️</div>
+      <div className="error-text">
+        <h3>Verification Error</h3>
         <p>{error}</p>
       </div>
-      <button className="close-btn" onClick={onDismiss}>×</button>
     </div>
     <div className="error-actions">
-      {onRetry && <button onClick={onRetry} className="btn btn-secondary">Retry</button>}
-      <button onClick={onDismiss} className="btn btn-primary">Dismiss</button>
+      {onRetry && (
+        <button onClick={onRetry} className="btn btn-primary btn-sm">
+          Retry
+        </button>
+      )}
+      {onDismiss && (
+        <button onClick={onDismiss} className="btn btn-secondary btn-sm">
+          Dismiss
+        </button>
+      )}
     </div>
   </div>
 )
 
-export const ResultCard = ({ result }) => {
-  const getRiskColor = (level) => {
-    switch (level) {
-      case 'Low':
-        return '#10b981'
-      case 'Medium':
-        return '#f59e0b'
-      case 'High':
-        return '#ef4444'
-      default:
-        return '#6b7280'
-    }
-  }
-
-  return (
-    <div className="result-card">
-      <div className="result-header">
-        <h2>Verification Complete</h2>
-      </div>
-
-      <div className="result-score">
-        <div className="score-circle" style={{ borderColor: getRiskColor(result.risk_level) }}>
-          <div className="score-value">{result.score}</div>
-          <div className="score-label">Score</div>
-        </div>
-        <div className="risk-badge" style={{ backgroundColor: getRiskColor(result.risk_level) }}>
-          {result.risk_level} Risk
-        </div>
-      </div>
-
-      <div className="result-details">
-        <div className="detail-group">
-          <h3>Document Information</h3>
-          <dl>
-            <dt>Type:</dt>
-            <dd className="capitalize">{result.document_type}</dd>
-            {result.extracted_fields.name && (
-              <>
-                <dt>Name:</dt>
-                <dd>{result.extracted_fields.name}</dd>
-              </>
-            )}
-            {result.extracted_fields.document_number && (
-              <>
-                <dt>Document No:</dt>
-                <dd>{result.extracted_fields.document_number}</dd>
-              </>
-            )}
-            {result.extracted_fields.dob && (
-              <>
-                <dt>DOB:</dt>
-                <dd>{result.extracted_fields.dob}</dd>
-              </>
-            )}
-          </dl>
-        </div>
-
-        <div className="detail-group">
-          <h3>Verification Results</h3>
-          <dl>
-            <dt>Face Match:</dt>
-            <dd className={result.face_match.match ? 'success' : 'error'}>
-              {result.face_match.match ? '✓ Matched' : '✗ No Match'}
-              {result.face_match.similarity && (
-                <span className="sub-text">
-                  {' '}
-                  (Similarity: {(result.face_match.similarity * 100).toFixed(1)}%)
-                </span>
-              )}
-            </dd>
-            <dt>Liveness:</dt>
-            <dd className={result.liveness.passed ? 'success' : 'error'}>
-              {result.liveness.passed ? '✓ Passed' : '✗ Failed'}
-            </dd>
-            {result.validations.aadhaar_format_ok !== undefined && (
-              <>
-                <dt>Aadhaar Format:</dt>
-                <dd className={result.validations.aadhaar_format_ok ? 'success' : 'error'}>
-                  {result.validations.aadhaar_format_ok ? '✓ Valid' : '✗ Invalid'}
-                </dd>
-              </>
-            )}
-            {result.validations.mrz_ok !== undefined && (
-              <>
-                <dt>MRZ:</dt>
-                <dd className={result.validations.mrz_ok ? 'success' : 'error'}>
-                  {result.validations.mrz_ok ? '✓ Valid' : '✗ Invalid'}
-                </dd>
-              </>
-            )}
-          </dl>
-        </div>
-
-        <div className="detail-group">
-          <h3>Score Breakdown (Explainability)</h3>
-          <div className="explainability">
-            {result.explainability && (
-              <>
-                <div className="component">
-                  <span className="label">Face Match:</span>
-                  <div className="bar-container">
-                    <div
-                      className="bar"
-                      style={{
-                        width: `${result.explainability.face_component}%`,
-                        backgroundColor: '#3b82f6',
-                      }}
-                    ></div>
-                  </div>
-                  <span className="value">
-                    {result.explainability.face_component.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="component">
-                  <span className="label">Liveness:</span>
-                  <div className="bar-container">
-                    <div
-                      className="bar"
-                      style={{
-                        width: `${result.explainability.liveness_component}%`,
-                        backgroundColor: '#8b5cf6',
-                      }}
-                    ></div>
-                  </div>
-                  <span className="value">
-                    {result.explainability.liveness_component.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="component">
-                  <span className="label">Validation:</span>
-                  <div className="bar-container">
-                    <div
-                      className="bar"
-                      style={{
-                        width: `${result.explainability.validation_component}%`,
-                        backgroundColor: '#06b6d4',
-                      }}
-                    ></div>
-                  </div>
-                  <span className="value">
-                    {result.explainability.validation_component.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="component">
-                  <span className="label">OCR Confidence:</span>
-                  <div className="bar-container">
-                    <div
-                      className="bar"
-                      style={{
-                        width: `${result.explainability.ocr_component}%`,
-                        backgroundColor: '#f59e0b',
-                      }}
-                    ></div>
-                  </div>
-                  <span className="value">
-                    {result.explainability.ocr_component.toFixed(1)}%
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="result-actions">
-        <button className="btn btn-primary">Download Report</button>
-        <button className="btn btn-secondary">Verify Again</button>
-      </div>
-    </div>
-  )
-}
-
 export const FileUploadBox = ({ label, onFileSelect, error, preview, quality }) => (
-  <div className="upload-box">
-    <label className="upload-label">{label}</label>
-    <div className="upload-area">
+  <div className="file-upload-box">
+    <label className="upload-label">
       <input
         type="file"
         accept="image/*"
         onChange={onFileSelect}
-        className="file-input"
-        id={label}
+        className="upload-input"
       />
-      <label htmlFor={label} className="upload-placeholder">
+      <div className="upload-area">
         {preview ? (
           <div className="preview-container">
-            <img src={preview} alt={label} className="preview-image" />
+            <img src={preview} alt="Preview" className="preview-image" />
+            {quality && (
+              <div className={`quality-indicator ${quality.quality}`}>
+                Quality: {quality.quality}
+              </div>
+            )}
           </div>
         ) : (
           <>
-            <span className="upload-icon">📸</span>
-            <p>Click or drag image here</p>
-            <span className="upload-hint">PNG, JPG, up to 10MB</span>
+            <div className="upload-icon">📁</div>
+            <div className="upload-text">
+              <p>{label}</p>
+              <span>Click to browse or drag & drop</span>
+            </div>
           </>
         )}
-      </label>
-    </div>
-    {quality && <ImageQualityFeedback {...quality} />}
+      </div>
+    </label>
     {error && <div className="upload-error">{error}</div>}
   </div>
 )

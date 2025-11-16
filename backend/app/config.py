@@ -14,3 +14,13 @@ ADMIN_TOKEN = os.getenv('ADMIN_TOKEN', 'secret-admin-token')
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '60'))
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL', 'admin@example.com')
+
+# OAuth Settings
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET', '')
+GITHUB_CLIENT_ID = os.getenv('GITHUB_CLIENT_ID', '')
+GITHUB_CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET', '')
+
+# Frontend/Backend URLs
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')

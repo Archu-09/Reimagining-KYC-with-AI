@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Dashboard Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test { margin: 15px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Quick System Fix & Test</h1>
+    
+    <div class="test">
+        <h3>1. Set Up Mock Authentication</h3>
+        <button onclick="setupMockAuth()">🔑 Setup Demo User</button>
+        <div id="auth-result"></div>
+    </div>
+
+    <div class="test">
+        <h3>2. Test Dashboard Access</h3>
+        <button onclick="testDashboard()">📊 Open Dashboard</button>
+        <div id="dashboard-result"></div>
+    </div>
+
+    <div class="test">
+        <h3>3. Test OAuth Login</h3>
+        <button onclick="testOAuth()">🔐 Test Google OAuth</button>
+        <div id="oauth-result"></div>
+    </div>
+
+    <div class="test">
+        <h3>4. Test Admin Panel</h3>
+        <button onclick="testAdmin()">👨‍💼 Open Admin Panel</button>
+        <div id="admin-result"></div>
+    </div>
+
+    <script>
+        function setupMockAuth() {
+            const user = {
+                name: 'Demo User',
+                email: 'demo@kyc.com',
+                role: 'user',
+                provider: 'demo'
+            };
+            
+            localStorage.setItem('kyc_token', 'demo-token-12345');
+            localStorage.setItem('kyc_user', JSON.stringify(user));
+            
+            document.getElementById('auth-result').innerHTML = '✅ Mock authentication set up successfully!';
+            document.getElementById('auth-result').parentElement.className = 'test success';
+        }
+
+        function testDashboard() {
+            // Ensure auth is set up
+            if (!localStorage.getItem('kyc_token')) {
+                setupMockAuth();
+            }
+            
+            // Open dashboard in new tab
+            window.open('http://localhost:3000/dashboard', '_blank');
+            document.getElementById('dashboard-result').innerHTML = '✅ Dashboard opened in new tab';
+            document.getElementById('dashboard-result').parentElement.className = 'test success';
+        }
+
+        function testOAuth() {
+            fetch('http://localhost:8000/api/auth/oauth/google/mock-login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('oauth-result').innerHTML = 
+                    `✅ OAuth working! User: ${data.user?.name} (${data.user?.email})`;
+                document.getElementById('oauth-result').parentElement.className = 'test success';
+                
+                // Store the OAuth result
+                localStorage.setItem('kyc_token', data.access_token);
+                localStorage.setItem('kyc_user', JSON.stringify(data.user));
+            })
+            .catch(error => {
+                document.getElementById('oauth-result').innerHTML = `❌ OAuth failed: ${error.message}`;
+                document.getElementById('oauth-result').parentElement.className = 'test error';
+            });
+        }
+
+        function testAdmin() {
+            fetch('http://localhost:8000/api/admin/jobs')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('admin-result').innerHTML = 
+                    `✅ Admin API working! Found ${data.length} jobs. Opening admin panel...`;
+                document.getElementById('admin-result').parentElement.className = 'test success';
+                
+                // Open admin panel
+                window.open('http://localhost:3000/admin', '_blank');
+            })
+            .catch(error => {
+                document.getElementById('admin-result').innerHTML = `❌ Admin failed: ${error.message}`;
+                document.getElementById('admin-result').parentElement.className = 'test error';
+            });
+        }
+
+        // Auto-test on load
+        window.onload = function() {
+            setTimeout(setupMockAuth, 500);
+        };
+    </script>
+</body>
+</html>

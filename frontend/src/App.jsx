@@ -8,7 +8,7 @@ import {
   ResultCard,
   FileUploadBox,
 } from './components/UI'
-import { LiveCamera } from './components/LiveCamera'
+import LivenessCamera from './components/LivenessCamera'
 
 // KYC Steps
 const STEPS = {
@@ -103,23 +103,51 @@ export default function App() {
     }
   }
 
-  const handleLiveCapture = async (file, attestation = null) => {
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      setSelfiePreview(event.target.result)
-      setSelfieFile(file)
-    }
-    reader.readAsDataURL(file)
-
+  const handleLiveCapture = async (captureData) => {
     try {
-      const quality = await analyzeImageQuality(file)
-      setSelfieQuality(quality)
-      setLivenessError(null)
+      let file, attestation = null;
+      
+      // Handle enhanced liveness capture data
+      if (captureData.mainImage && captureData.livenessFrames) {
+        file = new File([captureData.mainImage], 'selfie.jpg', { type: 'image/jpeg' });
+        attestation = {
+          captured_at: new Date().toISOString(),
+          method: captureData.livenessComplete ? 'advanced_liveness' : 'live_camera',
+          liveness_complete: captureData.livenessComplete,
+          frames_captured: captureData.livenessFrames?.length || 0,
+          attestation_score: captureData.livenessComplete ? 0.95 : 0.7
+        };
+      } else {
+        // Fallback for simple file capture
+        file = captureData;
+        attestation = {
+          captured_at: new Date().toISOString(),
+          method: 'live_camera',
+          attestation_score: 0.7
+        };
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSelfiePreview(event.target.result);
+        setSelfieFile(file);
+      }
+      reader.readAsDataURL(file);
+
+      const quality = await analyzeImageQuality(file);
+      setSelfieQuality(quality);
+      
+      // Enhanced attestation with quality
+      attestation.quality_score = quality.score;
+      setLivenessAttestation(attestation);
+      setLivenessError(null);
+      
     } catch (err) {
-      console.error('Quality analysis failed:', err)
+      console.error('Quality analysis failed:', err);
+      setLivenessError('Failed to process live capture');
     }
 
-    setShowLiveCamera(false)
+    setShowLiveCamera(false);
   }
 
   const canProceedDocumentReview = () => {
@@ -168,18 +196,75 @@ export default function App() {
       }
 
       const progressPromise = simulateVerificationProgress()
-      const res = await fetch('/api/verify', { method: 'POST', body: form })
-      const json = await res.json()
+      
+      // Debug: Log what we're sending
+      console.log('🚀 Sending verification request...')
+      console.log('Form data entries:')
+      for (let pair of form.entries()) {
+        if (pair[1] instanceof File) {
+          console.log(`${pair[0]}: File(${pair[1].name}, ${pair[1].size} bytes, ${pair[1].type})`)
+        } else {
+          console.log(`${pair[0]}: ${pair[1]}`)
+        }
+      }
+      
+      const res = await fetch('http://localhost:8000/api/verify', { 
+        method: 'POST', 
+        body: form,
+        // Don't set Content-Type header - let browser set it with boundary for multipart/form-data
+      })
+      
+      console.log('📥 Response received:', {
+        status: res.status,
+        statusText: res.statusText,
+        headers: Object.fromEntries(res.headers.entries())
+      })
+      
+      // Check if response is ok before trying to parse JSON
+      if (!res.ok) {
+        const errorText = await res.text()
+        console.error('❌ Verification failed:', res.status, errorText)
+        setError(`Verification failed: ${res.status} ${res.statusText}`)
+        setCurrentStep(STEPS.LIVENESS)
+        return
+      }
+      
+      // Get response text first to debug
+      const responseText = await res.text()
+      console.log('📄 Raw response:', responseText.substring(0, 200) + '...')
+      
+      let json
+      try {
+        json = JSON.parse(responseText)
+        console.log('✅ Successfully parsed JSON:', json)
+      } catch (parseError) {
+        console.error('❌ JSON parse error:', parseError)
+        console.error('Raw response text:', responseText)
+        
+        // Provide more helpful error message
+        let errorMessage = 'Invalid response from server.'
+        if (responseText.includes('<!DOCTYPE html>')) {
+          errorMessage = 'Server returned HTML instead of JSON. Check if backend is running correctly.'
+        } else if (responseText.trim() === '') {
+          errorMessage = 'Server returned empty response. Check backend logs.'
+        } else if (responseText.includes('404')) {
+          errorMessage = 'API endpoint not found. Check if backend server is running on port 8000.'
+        } else {
+          errorMessage = `Server response parse error: ${parseError.message}`
+        }
+        
+        setError(errorMessage)
+        setCurrentStep(STEPS.LIVENESS)
+        return
+      }
+      
       await progressPromise
 
-      if (!res.ok) {
-        setError(json.detail || 'Verification failed. Please try again.')
-        setCurrentStep(STEPS.LIVENESS)
-      } else {
-        setResult(json)
-        setCurrentStep(STEPS.RESULT)
-      }
+      setResult(json)
+      setCurrentStep(STEPS.RESULT)
     } catch (err) {
+      console.error('Verification error:', err)
+      await progressPromise // Ensure progress completes
       setError(err.message || 'Network error. Please check your connection.')
       setCurrentStep(STEPS.LIVENESS)
     } finally {
@@ -340,9 +425,9 @@ export default function App() {
       </div>
 
       {showLiveCamera ? (
-        <LiveCamera
+        <LivenessCamera
           onCapture={handleLiveCapture}
-          onCancel={() => setShowLiveCamera(false)}
+          onClose={() => setShowLiveCamera(false)}
         />
       ) : (
         <div className="liveness-container">

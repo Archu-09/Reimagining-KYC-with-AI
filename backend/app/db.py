@@ -1,7 +1,8 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from datetime import datetime
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:password@postgres:5432/kyc_db')
 
@@ -57,4 +58,30 @@ class VerificationJob(Base):
             'reviewer': self.reviewer,
             'review_comments': self.review_comments,
             'meta': self.meta,
+        }
+
+
+class User(Base):
+    __tablename__ = 'users'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    provider = Column(String, nullable=True)  # google, github, email
+    provider_id = Column(String, nullable=True)  # OAuth provider user ID
+    picture = Column(String, nullable=True)  # Profile picture URL
+    verified_email = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def as_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'name': self.name,
+            'provider': self.provider,
+            'picture': self.picture,
+            'verified_email': self.verified_email,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

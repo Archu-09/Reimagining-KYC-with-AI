@@ -8,13 +8,22 @@ export default function JobList({ onSelect }) {
 
   useEffect(() => {
     let mounted = true
+    console.log('📊 JobList: Fetching jobs from API...')
+    
     api.fetchJobs()
       .then((data) => {
+        console.log('📊 JobList: API response:', data)
         if (!mounted) return
         setJobs(data || [])
       })
-      .catch((err) => setError(err.message || 'Failed to load'))
-      .finally(() => setLoading(false))
+      .catch((err) => {
+        console.error('❌ JobList: API error:', err)
+        setError(err.message || 'Failed to load')
+      })
+      .finally(() => {
+        console.log('📊 JobList: Loading complete')
+        setLoading(false)
+      })
     return () => (mounted = false)
   }, [])
 
