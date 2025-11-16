@@ -1,0 +1,25 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+python-multipart==0.0.6
+pydantic==1.10.12
+sqlalchemy==1.4.54
+psycopg2-binary==2.9.7
+python-dotenv==1.0.0
+cryptography==41.0.3
+opencv-python-headless==4.8.1.78
+# easyocr omitted in demo build due to opencv version conflicts; add back for full ML setup
+numpy==1.26.2
+Pillow==10.0.1
+boto3==1.28.36
+requests==2.31.0
+
+# Face recognition
+# Optional heavy ML dependencies (not installed in demo build):
+# torch>=2.2.0
+# facenet-pytorch>=2.5.2
+
+# MRZ parsing (skip in demo build; add when running full stack)
+# python-mrz>=0.8.1
+
+# Testing
+pytest==7.4.3
