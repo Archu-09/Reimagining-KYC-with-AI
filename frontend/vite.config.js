@@ -6,7 +6,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // When running inside Docker Compose the backend is reachable
+        // by the service name `backend` on port 8000.
+        target: 'http://backend:8000',
         changeOrigin: true,
       },
     },

@@ -12,6 +12,7 @@ numpy==1.26.2
 Pillow==10.0.1
 boto3==1.28.36
 requests==2.31.0
+python-jose[cryptography]==3.3.0
 
 # Face recognition
 # Optional heavy ML dependencies (not installed in demo build):

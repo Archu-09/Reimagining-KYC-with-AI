@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480" fill="none">
+  <rect width="100%" height="100%" fill="#f3f4f6"/>
+  <g transform="translate(80,60)">
+    <rect x="0" y="0" width="480" height="320" rx="16" fill="#fff" stroke="#e6eefb" stroke-width="2"/>
+    <g transform="translate(24,24)">
+      <circle cx="56" cy="56" r="56" fill="#667eea" opacity="0.95" />
+      <rect x="136" y="16" width="260" height="28" rx="6" fill="#eaf1ff" />
+      <rect x="136" y="56" width="220" height="18" rx="6" fill="#f3f6ff" />
+      <rect x="136" y="86" width="180" height="18" rx="6" fill="#f3f6ff" />
+
+      <rect x="0" y="136" width="420" height="120" rx="8" fill="#f8fafc" />
+      <g transform="translate(12,150)">
+        <rect x="0" y="0" width="120" height="16" rx="4" fill="#eaf1ff" />
+        <rect x="0" y="28" width="80" height="12" rx="4" fill="#f3f6ff" />
+        <rect x="150" y="0" width="200" height="12" rx="4" fill="#f3f6ff" />
+        <rect x="150" y="28" width="160" height="12" rx="4" fill="#f3f6ff" />
+      </g>
+    </g>
+  </g>
+  <text x="50%" y="440" text-anchor="middle" fill="#9aa6bf" font-family="Segoe UI, Roboto, sans-serif" font-size="12">Illustration placeholder — replace with designer asset</text>
+</svg>

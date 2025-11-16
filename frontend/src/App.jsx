@@ -8,46 +8,75 @@ import {
   ResultCard,
   FileUploadBox,
 } from './components/UI'
+import { LiveCamera } from './components/LiveCamera'
+
+// KYC Steps
+const STEPS = {
+  DOCUMENT_TYPE: 'document_type',
+  DOCUMENT_UPLOAD: 'document_upload',
+  DOCUMENT_REVIEW: 'document_review',
+  LIVENESS: 'liveness',
+  VERIFICATION: 'verification',
+  RESULT: 'result',
+}
+
+const DOCUMENT_TYPES = [
+  { id: 'aadhaar', label: 'Aadhaar Card', icon: '🇮🇳' },
+  { id: 'passport', label: 'Passport', icon: '📕' },
+  { id: 'driving_license', label: "Driver's License", icon: '🎫' },
+  { id: 'pan_card', label: 'PAN Card', icon: '🆔' },
+]
 
 const VERIFICATION_STEPS = [
-  'Analyzing images',
-  'Classifying document',
+  'Analyzing documents',
   'Extracting information',
-  'Matching faces',
-  'Validating document',
+  'Detecting forgery',
+  'Face matching',
+  'Liveness verification',
   'Computing risk score',
 ]
 
 export default function App() {
+  // State management
+  const [currentStep, setCurrentStep] = useState(STEPS.DOCUMENT_TYPE)
+  const [documentType, setDocumentType] = useState(null)
   const [idFile, setIdFile] = useState(null)
-  const [selfieFile, setSelfieFile] = useState(null)
   const [idPreview, setIdPreview] = useState(null)
-  const [selfiePreview, setSelfiePreview] = useState(null)
   const [idQuality, setIdQuality] = useState(null)
+  const [idUploadError, setIdUploadError] = useState(null)
+  const [selfieFile, setSelfieFile] = useState(null)
+  const [selfiePreview, setSelfiePreview] = useState(null)
   const [selfieQuality, setSelfieQuality] = useState(null)
+  const [livenessAttestation, setLivenessAttestation] = useState(null)
+  const [livenessError, setLivenessError] = useState(null)
+  const [showLiveCamera, setShowLiveCamera] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [uploadErrors, setUploadErrors] = useState({ id: null, selfie: null })
+  const [verificationStep, setVerificationStep] = useState(0)
+
+  // Handlers
+  const selectDocumentType = (typeId) => {
+    setDocumentType(typeId)
+    setCurrentStep(STEPS.DOCUMENT_UPLOAD)
+  }
 
   const handleImageSelect = async (e, type) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
-      setUploadErrors((prev) => ({ ...prev, [type]: 'Please select a valid image file' }))
+      if (type === 'id') setIdUploadError('Please select a valid image file')
+      else setLivenessError('Please select a valid image file')
       return
     }
 
-    // Validate file size (10MB max)
     if (file.size > 10 * 1024 * 1024) {
-      setUploadErrors((prev) => ({ ...prev, [type]: 'File size must be less than 10MB' }))
+      if (type === 'id') setIdUploadError('File size must be less than 10MB')
+      else setLivenessError('File size must be less than 10MB')
       return
     }
 
-    // Create preview
     const reader = new FileReader()
     reader.onload = (event) => {
       if (type === 'id') {
@@ -60,76 +89,102 @@ export default function App() {
     }
     reader.readAsDataURL(file)
 
-    // Analyze quality
     try {
       const quality = await analyzeImageQuality(file)
       if (type === 'id') {
         setIdQuality(quality)
+        setIdUploadError(null)
       } else {
         setSelfieQuality(quality)
+        setLivenessError(null)
       }
-      setUploadErrors((prev) => ({ ...prev, [type]: null }))
     } catch (err) {
       console.error('Quality analysis failed:', err)
     }
   }
 
-  const canSubmit = () => {
+  const handleLiveCapture = async (file, attestation = null) => {
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      setSelfiePreview(event.target.result)
+      setSelfieFile(file)
+    }
+    reader.readAsDataURL(file)
+
+    try {
+      const quality = await analyzeImageQuality(file)
+      setSelfieQuality(quality)
+      setLivenessError(null)
+    } catch (err) {
+      console.error('Quality analysis failed:', err)
+    }
+
+    setShowLiveCamera(false)
+  }
+
+  const canProceedDocumentReview = () => {
     return (
       idFile &&
+      !idUploadError &&
+      (idQuality?.quality === 'good' || idQuality?.score > 50)
+    )
+  }
+
+  const canProceedLiveness = () => {
+    return (
       selfieFile &&
-      !uploadErrors.id &&
-      !uploadErrors.selfie &&
-      (idQuality?.quality === 'good' || idQuality?.score > 50) &&
+      !livenessError &&
       (selfieQuality?.quality === 'good' || selfieQuality?.score > 50)
     )
   }
 
-  const simulateProgress = async () => {
-    // Simulate step-by-step progress
+  const simulateVerificationProgress = async () => {
     for (let i = 1; i <= VERIFICATION_STEPS.length; i++) {
-      setCurrentStep(i)
+      setVerificationStep(i)
       await new Promise((resolve) => setTimeout(resolve, 800))
     }
   }
 
-  const submit = async (e) => {
-    e.preventDefault()
-    if (!canSubmit()) {
-      setError('Please ensure both images have acceptable quality and are selected.')
+  const submitVerification = async (e) => {
+    e?.preventDefault()
+    if (!canProceedDocumentReview() || !canProceedLiveness()) {
+      setError('Please ensure all images have acceptable quality.')
       return
     }
 
     setLoading(true)
     setError(null)
-    setCurrentStep(0)
+    setVerificationStep(0)
     setResult(null)
+    setCurrentStep(STEPS.VERIFICATION)
 
     try {
       const form = new FormData()
       form.append('id_image', idFile)
       form.append('selfie', selfieFile)
+      form.append('document_type', documentType)
+      if (livenessAttestation) {
+        form.append('liveness_attestation', JSON.stringify(livenessAttestation))
+      }
 
-      // Simulate progress
-      const progressPromise = simulateProgress()
-
-      // Make request
+      const progressPromise = simulateVerificationProgress()
       const res = await fetch('/api/verify', { method: 'POST', body: form })
       const json = await res.json()
-
-      // Wait for progress animation to finish
       await progressPromise
 
       if (!res.ok) {
         setError(json.detail || 'Verification failed. Please try again.')
+        setCurrentStep(STEPS.LIVENESS)
       } else {
         setResult(json)
+        setCurrentStep(STEPS.RESULT)
       }
     } catch (err) {
-      setError(err.message || 'Network error. Please check your connection and try again.')
+      setError(err.message || 'Network error. Please check your connection.')
+      setCurrentStep(STEPS.LIVENESS)
     } finally {
       setLoading(false)
-      setCurrentStep(0)
+      setVerificationStep(0)
     }
   }
 
@@ -142,84 +197,290 @@ export default function App() {
     setSelfiePreview(null)
     setIdQuality(null)
     setSelfieQuality(null)
+    setDocumentType(null)
+    setCurrentStep(STEPS.DOCUMENT_TYPE)
+    setShowLiveCamera(false)
   }
+
+  const documentTypeLabel = DOCUMENT_TYPES.find((d) => d.id === documentType)?.label || ''
+
+  // Render functions
+  const renderDocumentTypeSelection = () => (
+    <div className="kyc-section">
+      <h2>Step 1: Select Document Type</h2>
+      <p className="section-hint">Choose the identity document you want to verify</p>
+
+      <div className="document-type-grid">
+        {DOCUMENT_TYPES.map((doc) => (
+          <button
+            key={doc.id}
+            onClick={() => selectDocumentType(doc.id)}
+            className="document-type-card"
+          >
+            <div className="doc-icon">{doc.icon}</div>
+            <div className="doc-label">{doc.label}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const renderDocumentUpload = () => (
+    <div className="kyc-section">
+      <div className="section-header">
+        <button
+          className="btn-back"
+          onClick={() => {
+            setDocumentType(null)
+            setCurrentStep(STEPS.DOCUMENT_TYPE)
+          }}
+        >
+          ← Back
+        </button>
+        <h2>Step 2: Upload {documentTypeLabel}</h2>
+        <div></div>
+      </div>
+
+      <div className="upload-container">
+        <div className="upload-box-wrapper">
+          <h3>📄 {documentTypeLabel}</h3>
+          <p className="upload-hint">
+            Ensure the entire document is visible, well-lit, and clearly readable
+          </p>
+          <FileUploadBox
+            label={`Upload ${documentTypeLabel}`}
+            onFileSelect={(e) => handleImageSelect(e, 'id')}
+            error={idUploadError}
+            preview={idPreview}
+            quality={idQuality}
+          />
+          {canProceedDocumentReview() && (
+            <button
+              className="btn btn-primary btn-full"
+              onClick={() => setCurrentStep(STEPS.DOCUMENT_REVIEW)}
+            >
+              ✓ Document Looks Good
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderDocumentReview = () => (
+    <div className="kyc-section">
+      <div className="section-header">
+        <button
+          className="btn-back"
+          onClick={() => setCurrentStep(STEPS.DOCUMENT_UPLOAD)}
+        >
+          ← Back
+        </button>
+        <h2>Step 3: Review {documentTypeLabel}</h2>
+        <div></div>
+      </div>
+
+      <div className="review-container">
+        <div className="review-image">
+          <img src={idPreview} alt="Document preview" />
+          {idQuality && (
+            <div className={`quality-badge quality-${idQuality.quality}`}>
+              {idQuality.quality === 'good' ? '✓ Good' : '⚠ Fair'} Quality
+            </div>
+          )}
+        </div>
+
+        <div className="review-checklist">
+          <h3>Document Checklist</h3>
+          <ul>
+            <li>
+              <input type="checkbox" defaultChecked disabled /> All corners visible
+            </li>
+            <li>
+              <input type="checkbox" defaultChecked disabled /> Text is clear and readable
+            </li>
+            <li>
+              <input type="checkbox" defaultChecked disabled /> No glare or shadows
+            </li>
+            <li>
+              <input type="checkbox" defaultChecked disabled /> Photo is recent and in color
+            </li>
+          </ul>
+
+          <div className="review-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => setCurrentStep(STEPS.DOCUMENT_UPLOAD)}
+            >
+              ✎ Re-upload
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => setCurrentStep(STEPS.LIVENESS)}
+            >
+              ✓ Proceed to Liveness
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderLiveness = () => (
+    <div className="kyc-section">
+      <div className="section-header">
+        <button
+          className="btn-back"
+          onClick={() => setCurrentStep(STEPS.DOCUMENT_REVIEW)}
+        >
+          ← Back
+        </button>
+        <h2>Step 4: Liveness Verification</h2>
+        <div></div>
+      </div>
+
+      {showLiveCamera ? (
+        <LiveCamera
+          onCapture={handleLiveCapture}
+          onCancel={() => setShowLiveCamera(false)}
+        />
+      ) : (
+        <div className="liveness-container">
+          {!selfieFile ? (
+            <div className="liveness-prompt">
+              <div className="liveness-icon">📸</div>
+              <h3>Take a Selfie</h3>
+              <p>
+                Position your face clearly in the frame. Ensure good lighting and a neutral background.
+              </p>
+
+              <div className="liveness-tips">
+                <h4>Tips for best results:</h4>
+                <ul>
+                  <li>✓ Face the camera directly</li>
+                  <li>✓ Good lighting (avoid backlighting)</li>
+                  <li>✓ Neutral expression</li>
+                  <li>✓ No glasses or hats (if possible)</li>
+                  <li>✓ Recent photo (same day/outfit)</li>
+                </ul>
+              </div>
+
+              <button
+                className="btn btn-primary btn-full btn-lg"
+                onClick={() => setShowLiveCamera(true)}
+              >
+                🎥 Start Camera
+              </button>
+
+              <div className="divider">OR</div>
+
+              <div className="upload-box-wrapper">
+                <FileUploadBox
+                  label="Upload Selfie"
+                  onFileSelect={(e) => handleImageSelect(e, 'selfie')}
+                  error={livenessError}
+                  preview={null}
+                  quality={null}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="liveness-review">
+              <div className="review-image">
+                <img src={selfiePreview} alt="Selfie preview" />
+                {selfieQuality && (
+                  <div className={`quality-badge quality-${selfieQuality.quality}`}>
+                    {selfieQuality.quality === 'good' ? '✓ Good' : '⚠ Fair'} Quality
+                  </div>
+                )}
+              </div>
+
+              <div className="review-actions">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setSelfieFile(null)
+                    setSelfiePreview(null)
+                    setSelfieQuality(null)
+                  }}
+                >
+                  ✎ Retake
+                </button>
+                <button className="btn btn-primary" onClick={submitVerification}>
+                  ✓ Verify Identity
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderVerification = () => (
+    <div className="kyc-section">
+      <h2>Verification in Progress</h2>
+      <div className="verification-progress">
+        <ProgressBar
+          step={verificationStep}
+          totalSteps={VERIFICATION_STEPS.length}
+        />
+        <LoadingSpinner
+          step={verificationStep}
+          totalSteps={VERIFICATION_STEPS.length}
+        />
+        <div className="steps-info">
+          {VERIFICATION_STEPS.map((step, idx) => (
+            <div
+              key={idx}
+              className={`step-info ${idx < verificationStep ? 'completed' : ''} ${
+                idx === verificationStep - 1 ? 'active' : ''
+              }`}
+            >
+              {idx < verificationStep - 1 ? '✓' : idx === verificationStep - 1 ? '→' : '○'}{' '}
+              {step}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderResult = () => (
+    <div className="kyc-section">
+      <ResultCard result={result} />
+      <div className="result-actions">
+        <button className="btn btn-primary" onClick={handleRetry}>
+          ↻ Verify Another Person
+        </button>
+      </div>
+    </div>
+  )
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>🔐 Reimagining KYC with AI</h1>
-        <p>Fast, secure, and transparent identity verification</p>
+        <h1>🔐 KYC Verification</h1>
+        <p>Fast, secure, and transparent identity verification powered by AI</p>
       </header>
 
       <main className="app-main">
-        {result ? (
-          <>
-            <ResultCard result={result} />
-            <div className="action-buttons">
-              <button className="btn btn-primary" onClick={handleRetry}>
-                ↻ Verify Another Person
-              </button>
-            </div>
-          </>
-        ) : loading ? (
-          <div className="loading-section">
-            <ProgressBar step={currentStep} totalSteps={VERIFICATION_STEPS.length} />
-            <LoadingSpinner step={currentStep} totalSteps={VERIFICATION_STEPS.length} />
-            <div className="steps-info">
-              {VERIFICATION_STEPS.map((step, idx) => (
-                <div
-                  key={idx}
-                  className={`step-info ${idx < currentStep ? 'completed' : ''} ${
-                    idx === currentStep - 1 ? 'active' : ''
-                  }`}
-                >
-                  {idx < currentStep - 1 ? '✓' : idx === currentStep - 1 ? '→' : '○'} {step}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : error ? (
-          <>
-            <ErrorAlert
-              error={error}
-              onRetry={handleRetry}
-              onDismiss={() => setError(null)}
-            />
-          </>
-        ) : (
-          <form onSubmit={submit} className="upload-form">
-            <div className="upload-section">
-              <FileUploadBox
-                label="ID Image (Aadhaar, Passport, or Driver's License)"
-                onFileSelect={(e) => handleImageSelect(e, 'id')}
-                error={uploadErrors.id}
-                preview={idPreview}
-                quality={idQuality}
-              />
-
-              <FileUploadBox
-                label="Selfie (Recent Photo)"
-                onFileSelect={(e) => handleImageSelect(e, 'selfie')}
-                error={uploadErrors.selfie}
-                preview={selfiePreview}
-                quality={selfieQuality}
-              />
-            </div>
-
-            <div className="submit-section">
-              <button type="submit" disabled={!canSubmit()} className="btn btn-verify">
-                ✓ Verify Identity
-              </button>
-              {!canSubmit() && (
-                <p className="submit-hint">
-                  {!idFile || !selfieFile
-                    ? 'Please select both images'
-                    : 'Images must have acceptable quality'}
-                </p>
-              )}
-            </div>
-          </form>
+        {error && (
+          <ErrorAlert
+            error={error}
+            onRetry={
+              currentStep === STEPS.VERIFICATION ? () => setCurrentStep(STEPS.LIVENESS) : null
+            }
+            onDismiss={() => setError(null)}
+          />
         )}
+
+        {currentStep === STEPS.DOCUMENT_TYPE && renderDocumentTypeSelection()}
+        {currentStep === STEPS.DOCUMENT_UPLOAD && renderDocumentUpload()}
+        {currentStep === STEPS.DOCUMENT_REVIEW && renderDocumentReview()}
+        {currentStep === STEPS.LIVENESS && renderLiveness()}
+        {currentStep === STEPS.VERIFICATION && renderVerification()}
+        {currentStep === STEPS.RESULT && renderResult()}
       </main>
 
       <footer className="app-footer">

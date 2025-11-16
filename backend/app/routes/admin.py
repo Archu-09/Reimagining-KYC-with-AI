@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Header, HTTPException, Response, Query
+from fastapi import APIRouter, HTTPException, Response, Query, Depends
 from typing import Optional
 from app.db import SessionLocal, VerificationJob
-from app.config import ADMIN_TOKEN
+from app.auth import ensure_admin
 from datetime import datetime
 from app.services.orchestrator import run_verification
 from app.services import forgery
@@ -11,14 +11,8 @@ import io
 router = APIRouter()
 
 
-def _check_admin(token: Optional[str]):
-    if token != ADMIN_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
 @router.get("/jobs")
-def list_jobs(status: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
-    _check_admin(x_admin_token)
+def list_jobs(status: Optional[str] = None, user: dict = Depends(ensure_admin)):
     db = SessionLocal()
     q = db.query(VerificationJob)
     if status:
@@ -28,8 +22,7 @@ def list_jobs(status: Optional[str] = None, x_admin_token: Optional[str] = Heade
 
 
 @router.get("/jobs/{job_id}")
-def get_job(job_id: int, x_admin_token: Optional[str] = Header(None)):
-    _check_admin(x_admin_token)
+def get_job(job_id: int, user: dict = Depends(ensure_admin)):
     db = SessionLocal()
     job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
     if not job:
@@ -38,8 +31,7 @@ def get_job(job_id: int, x_admin_token: Optional[str] = Header(None)):
 
 
 @router.post("/jobs/{job_id}/review")
-def review_job(job_id: int, approve: bool = True, comments: Optional[str] = None, x_admin_token: Optional[str] = Header(None)):
-    _check_admin(x_admin_token)
+def review_job(job_id: int, approve: bool = True, comments: Optional[str] = None, user: dict = Depends(ensure_admin)):
     db = SessionLocal()
     job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
     if not job:
@@ -56,8 +48,7 @@ def review_job(job_id: int, approve: bool = True, comments: Optional[str] = None
 
 
 @router.post("/jobs/{job_id}/reverify")
-def reverify_job(job_id: int, x_admin_token: Optional[str] = Header(None)):
-    _check_admin(x_admin_token)
+def reverify_job(job_id: int, user: dict = Depends(ensure_admin)):
     db = SessionLocal()
     job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
     if not job:
@@ -96,8 +87,7 @@ def reverify_job(job_id: int, x_admin_token: Optional[str] = Header(None)):
 
 
 @router.get("/forgery/ela/{job_id}")
-def get_ela_image(job_id: int, as_base64: bool = Query(False), x_admin_token: Optional[str] = Header(None)):
-    _check_admin(x_admin_token)
+def get_ela_image(job_id: int, as_base64: bool = Query(False), user: dict = Depends(ensure_admin)):
     db = SessionLocal()
     job = db.query(VerificationJob).filter(VerificationJob.id == job_id).first()
     if not job:
