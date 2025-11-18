@@ -4,11 +4,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    port: 3000,
+    host: 'localhost',
     proxy: {
       '/api': {
-        // When running inside Docker Compose the backend is reachable
-        // by the service name `backend` on port 8000.
-        target: 'http://backend:8000',
+        // For local development, proxy to localhost:8000
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

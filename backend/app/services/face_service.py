@@ -61,14 +61,45 @@ try:
             logger.exception("Facenet matching failed: %s", e)
             return {"similarity": 0.0, "match": False, "method": "facenet", "error": str(e)}
 
-    def liveness_check(selfie_path: str) -> Dict[str, object]:
-        """Advanced liveness detection using multiple computer vision techniques."""
+    def liveness_check(selfie_path: str, id_document_path: str = None) -> Dict[str, object]:
+        """Enhanced liveness detection with document face validation."""
         try:
-            from app.services.liveness_service import liveness_detector
-            return liveness_detector.detect_liveness_single_image(selfie_path)
+            # Use enhanced liveness detection if document path provided
+            if id_document_path:
+                from app.services.enhanced_liveness import enhanced_liveness_detector
+                return enhanced_liveness_detector.comprehensive_liveness_check(id_document_path, selfie_path)
+            else:
+                # Fallback to original method for backward compatibility
+                from app.services.liveness_service import liveness_detector
+                result = liveness_detector.detect_liveness_single_image(selfie_path)
+                # Apply stricter scoring for security
+                if result.get('liveness_score', 0) > 0:
+                    result['liveness_score'] = result['liveness_score'] * 0.8  # Make it harder to pass
+                    result['passed'] = result['liveness_score'] >= 0.75  # Higher threshold
+                    result['security_level'] = 'enhanced'
+                return result
         except ImportError:
-            logger.warning("Advanced liveness service not available, using basic check")
-            return {"liveness_score": 0.85, "passed": True, "method": "basic"}
+            logger.warning("Enhanced liveness service not available, using basic check with strict validation")
+            # Even basic check should require face detection
+            try:
+                import cv2
+                img = cv2.imread(selfie_path)
+                if img is None:
+                    return {"liveness_score": 0.0, "passed": False, "method": "basic", "error": "Cannot load image"}
+                
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+                
+                if len(faces) == 0:
+                    return {"liveness_score": 0.0, "passed": False, "method": "basic", "error": "No face detected"}
+                elif len(faces) > 1:
+                    return {"liveness_score": 0.0, "passed": False, "method": "basic", "error": "Multiple faces detected"}
+                else:
+                    # Even with face detected, use conservative score
+                    return {"liveness_score": 0.6, "passed": False, "method": "basic", "warning": "Basic check - upgrade to enhanced detection recommended"}
+            except:
+                return {"liveness_score": 0.0, "passed": False, "method": "basic", "error": "Face detection failed"}
 
 except Exception:
     # facenet/torch not available: implement OpenCV-based fallback for
@@ -137,20 +168,35 @@ except Exception:
             logger.exception("OpenCV fallback matching failed: %s", e)
             return {"similarity": 0.0, "match": False, "method": "opencv-fallback", "error": str(e)}
 
-    def liveness_check(selfie_path: str) -> Dict[str, object]:
-        """Lightweight liveness heuristic for single-image selfies.
+    def liveness_check(selfie_path: str, id_document_path: str = None) -> Dict[str, object]:
+        """Enhanced liveness check that validates both selfie and document face.
 
-        - Verifies a face is present
-        - Detects eyes within face region
-        - Uses face size and eye detections to compute a score
+        - Verifies a face is present in selfie
+        - Verifies face exists in document (if provided)
+        - Enhanced eye detection and analysis
+        - Anti-spoofing measures
         """
-        logger.debug(f"[FACE-LIVENESS] Checking liveness for {selfie_path}")
+        logger.debug(f"[FACE-LIVENESS] Enhanced checking for {selfie_path}")
         try:
+            # Use enhanced detection if document provided
+            if id_document_path:
+                try:
+                    from app.services.enhanced_liveness import enhanced_liveness_detector
+                    return enhanced_liveness_detector.comprehensive_liveness_check(id_document_path, selfie_path)
+                except ImportError:
+                    logger.warning("Enhanced liveness detector not available, using strict OpenCV fallback")
+            
+            # Strict OpenCV-based liveness check
             img = _read_image(selfie_path)
             faces, gray = _detect_faces(img)
+            
             if len(faces) == 0:
                 logger.warning(f"[FACE-LIVENESS] No face detected")
-                return {"liveness_score": 0.0, "passed": False, "method": "opencv-heuristic", "reason": "no_face"}
+                return {"liveness_score": 0.0, "passed": False, "method": "opencv-strict", "reason": "no_face"}
+            
+            if len(faces) > 1:
+                logger.warning(f"[FACE-LIVENESS] Multiple faces detected: {len(faces)}")
+                return {"liveness_score": 0.0, "passed": False, "method": "opencv-strict", "reason": "multiple_faces"}
 
             face = max(faces, key=lambda b: b[2] * b[3])
             x, y, w, h = face
@@ -159,21 +205,73 @@ except Exception:
             img_h, img_w = gray.shape
             face_area_ratio = (w * h) / float(img_w * img_h)
 
+            # Stricter face size requirement
+            if face_area_ratio < 0.05:  # Face must be at least 5% of image
+                logger.warning(f"[FACE-LIVENESS] Face too small: {face_area_ratio:.3f}")
+                return {"liveness_score": 0.0, "passed": False, "method": "opencv-strict", "reason": "face_too_small"}
+
+            # Enhanced eye detection
             eyes = EYE_CASCADE.detectMultiScale(face_region_gray, scaleFactor=1.1, minNeighbors=4, minSize=(10, 10))
 
+            # Stricter scoring system
             score = 0.0
-            if face_area_ratio > 0.02:
-                score += min(0.5, face_area_ratio * 10.0)
+            
+            # Face size scoring (more strict)
+            if face_area_ratio > 0.1:
+                score += 0.3
+            elif face_area_ratio > 0.05:
+                score += 0.15
+            
+            # Eye detection scoring (require both eyes)
             if len(eyes) >= 2:
-                score += 0.45
+                score += 0.4
+                # Bonus for good eye quality
+                for (ex, ey, ew, eh) in eyes[:2]:
+                    eye_region = face_region_gray[ey:ey+eh, ex:ex+ew]
+                    eye_contrast = np.std(eye_region)
+                    if eye_contrast > 15:  # Good eye contrast
+                        score += 0.05
             elif len(eyes) == 1:
-                score += 0.25
-
+                score += 0.1  # Much lower score for single eye
+            else:
+                # No eyes detected - fail immediately
+                logger.warning(f"[FACE-LIVENESS] No eyes detected")
+                return {"liveness_score": 0.0, "passed": False, "method": "opencv-strict", "reason": "no_eyes"}
+            
+            # Image quality checks
+            # 1. Sharpness check
+            laplacian_var = cv2.Laplacian(face_region_gray, cv2.CV_64F).var()
+            if laplacian_var > 100:  # Minimum sharpness
+                score += 0.1
+            
+            # 2. Brightness check
+            mean_brightness = np.mean(face_region_gray)
+            if 50 < mean_brightness < 200:  # Reasonable brightness range
+                score += 0.1
+            
+            # 3. Anti-spoofing: check for screen artifacts
+            # Look for excessive uniformity (printed photos)
+            texture_std = np.std(face_region_gray)
+            if texture_std > 20:  # Natural texture variation
+                score += 0.05
+            
             score = max(0.0, min(1.0, score))
-            passed = score >= 0.6
-            meta = {"face_area_ratio": round(face_area_ratio, 4), "eyes_detected": int(len(eyes))}
-            logger.info(f"[FACE-LIVENESS] Score={score:.3f}, passed={passed}, eyes={len(eyes)}")
-            return {"liveness_score": round(score, 3), "passed": bool(passed), "method": "opencv-heuristic", **meta}
+            
+            # Much stricter passing threshold
+            passed = score >= 0.75 and len(eyes) >= 2
+            
+            meta = {
+                "face_area_ratio": round(face_area_ratio, 4), 
+                "eyes_detected": int(len(eyes)),
+                "face_sharpness": round(laplacian_var, 2),
+                "face_brightness": round(mean_brightness, 2),
+                "texture_variation": round(texture_std, 2),
+                "security_level": "strict"
+            }
+            
+            logger.info(f"[FACE-LIVENESS] Enhanced Score={score:.3f}, passed={passed}, eyes={len(eyes)}, area_ratio={face_area_ratio:.3f}")
+            return {"liveness_score": round(score, 3), "passed": bool(passed), "method": "opencv-strict", **meta}
+            
         except Exception as e:
-            logger.exception("OpenCV liveness check failed: %s", e)
-            return {"liveness_score": 0.0, "passed": False, "method": "opencv-heuristic", "error": str(e)}
+            logger.exception("Enhanced OpenCV liveness check failed: %s", e)
+            return {"liveness_score": 0.0, "passed": False, "method": "opencv-strict", "error": str(e)}

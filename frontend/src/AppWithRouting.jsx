@@ -1,7 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import EnhancedSignIn from './pages/EnhancedSignIn';
+import UniqueSignIn from './pages/UniqueSignIn';
 import OAuthCallback from './pages/OAuthCallback';
+import UniqueDashboard from './pages/UniqueDashboard';
+import SmartKycFlow from './pages/SmartKycFlow';
 import Dashboard from './pages/Dashboard';
 import Admin from './admin/Admin';
 import './styles.css';
@@ -19,7 +21,7 @@ const App = () => {
       <div className="app">
         <Routes>
           {/* Public Routes */}
-          <Route path="/signin" element={<EnhancedSignIn />} />
+          <Route path="/signin" element={<UniqueSignIn />} />
           <Route path="/auth/callback/:provider" element={<OAuthCallback />} />
           <Route path="/auth/success" element={<OAuthCallback />} />
           <Route path="/auth/error" element={<OAuthCallback />} />
@@ -27,6 +29,24 @@ const App = () => {
           {/* Protected Routes */}
           <Route 
             path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <UniqueDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/verify" 
+            element={
+              <ProtectedRoute>
+                <SmartKycFlow />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/kyc-classic" 
             element={
               <ProtectedRoute>
                 <Dashboard />

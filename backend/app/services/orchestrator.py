@@ -30,10 +30,11 @@ def run_verification(id_path: str, selfie_path: str) -> Dict[str, Any]:
     face_match = face_service.match_faces(id_path, selfie_path)
     logger.info(f"  → Face match: {face_match.get('match', False)}, Score: {face_match.get('score', 0):.2f}")
 
-    # 4. Liveness
-    logger.debug("[ORCHESTRATOR] Step 4: Checking liveness...")
-    liveness = face_service.liveness_check(selfie_path)
-    logger.info(f"  → Liveness passed: {liveness.get('passed', False)}, Score: {liveness.get('score', 0):.2f}")
+    # 4. Enhanced Liveness (with document validation)
+    logger.debug("[ORCHESTRATOR] Step 4: Checking enhanced liveness...")
+    liveness = face_service.liveness_check(selfie_path, id_document_path=id_path)
+    liveness_score = liveness.get('liveness_score', liveness.get('score', 0))
+    logger.info(f"  → Enhanced Liveness passed: {liveness.get('passed', False)}, Score: {liveness_score:.2f}")
 
     # 5. Validators
     logger.debug("[ORCHESTRATOR] Step 5: Running validations...")
