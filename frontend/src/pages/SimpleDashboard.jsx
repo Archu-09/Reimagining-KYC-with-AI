@@ -1,16 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { navigateWithLoading } from '../utils/navigation';
 
 const SimpleDashboard = () => {
   const user = JSON.parse(localStorage.getItem('kyc_user') || '{}');
+  const [navigating, setNavigating] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Loading...');
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    setNavigating(true);
+    setLoadingMessage('Signing out...');
+    
     localStorage.removeItem('kyc_token');
     localStorage.removeItem('kyc_user');
-    window.location.pathname = '/signin';
+    
+    await navigateWithLoading('/signin');
   };
 
-  const startKYC = () => {
-    window.location.pathname = '/verify';
+  const startKYC = async () => {
+    setNavigating(true);
+    setLoadingMessage('Starting KYC verification...');
+    await navigateWithLoading('/verify');
   };
 
   return (
@@ -194,6 +204,11 @@ const SimpleDashboard = () => {
         <p>🔒 KYC System v2.0 - Secure Identity Verification Platform</p>
         <p>Built with React + FastAPI + AI/ML</p>
       </footer>
+      
+      <LoadingOverlay 
+        show={navigating} 
+        message={loadingMessage} 
+      />
     </div>
   );
 };
