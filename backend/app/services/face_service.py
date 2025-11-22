@@ -1,8 +1,142 @@
 import logging
-from typing import Dict
+from typing import Dict, List, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+def _generate_shap_explanation(features: Dict[str, float], decision: str) -> Dict[str, any]:
+    """
+    Generate SHAP-style explanations for face verification decisions.
+    This provides transparency into which factors contributed most to the decision.
+    
+    Args:
+        features: Dictionary of feature values that went into the decision
+        decision: The final decision made ('match', 'no_match', 'liveness_pass', 'liveness_fail')
+    
+    Returns:
+        Dictionary with SHAP values and visualization data
+    """
+    # Calculate SHAP-style contributions
+    # Positive values support the decision, negative values oppose it
+    shap_values = {}
+    feature_importance = []
+    
+    # Baseline (expected value) - what we'd predict with no information
+    baseline = 0.5
+    
+    # For each feature, calculate its contribution to moving from baseline to final decision
+    total_contribution = 0.0
+    
+    for feature_name, feature_value in features.items():
+        # Normalize feature value to contribution score
+        if 'similarity' in feature_name:
+            # Similarity scores: higher = more positive contribution
+            contribution = (feature_value - 0.5) * 2.0  # Scale to [-1, 1]
+        elif 'score' in feature_name:
+            # Score values: already normalized
+            contribution = (feature_value - 0.5) * 2.0
+        elif 'ratio' in feature_name:
+            # Ratio values: optimal around certain ranges
+            if feature_value > 0.1:  # Good face size
+                contribution = min(feature_value * 2.0, 1.0)
+            else:
+                contribution = -0.5
+        elif 'eyes_detected' in feature_name:
+            # Eye count: 2 is optimal
+            if feature_value >= 2:
+                contribution = 1.0
+            elif feature_value == 1:
+                contribution = 0.3
+            else:
+                contribution = -1.0
+        elif 'sharpness' in feature_name or 'contrast' in feature_name:
+            # Quality metrics: higher is better, with reasonable thresholds
+            contribution = min(feature_value / 200.0, 1.0) - 0.5
+        elif 'brightness' in feature_name:
+            # Brightness: optimal around 100-150
+            optimal = 125
+            deviation = abs(feature_value - optimal) / optimal
+            contribution = 1.0 - deviation
+        else:
+            # Default: use normalized value
+            contribution = feature_value - 0.5
+        
+        shap_values[feature_name] = round(contribution, 4)
+        feature_importance.append({
+            'feature': feature_name,
+            'value': feature_value,
+            'contribution': round(contribution, 4),
+            'abs_contribution': round(abs(contribution), 4)
+        })
+        total_contribution += contribution
+    
+    # Sort by absolute contribution (most important first)
+    feature_importance.sort(key=lambda x: x['abs_contribution'], reverse=True)
+    
+    # Calculate confidence based on how strongly features support the decision
+    confidence = min(abs(total_contribution) / len(features), 1.0) if features else 0.0
+    
+    # Determine decision direction
+    predicted_class = 1 if total_contribution > 0 else 0
+    
+    return {
+        'shap_values': shap_values,
+        'feature_importance': feature_importance,
+        'baseline': baseline,
+        'prediction': predicted_class,
+        'confidence': round(confidence, 4),
+        'total_contribution': round(total_contribution, 4),
+        'top_3_features': feature_importance[:3],
+        'decision_factors': _generate_decision_narrative(feature_importance, decision)
+    }
+
+def _generate_decision_narrative(feature_importance: List[Dict], decision: str) -> List[str]:
+    """
+    Generate human-readable narrative explaining the decision.
+    
+    Args:
+        feature_importance: Sorted list of features by importance
+        decision: The decision made
+    
+    Returns:
+        List of narrative strings explaining key factors
+    """
+    narrative = []
+    
+    for feat in feature_importance[:3]:  # Top 3 most important
+        feature = feat['feature']
+        value = feat['value']
+        contribution = feat['contribution']
+        
+        if contribution > 0.5:
+            impact = "strongly supported"
+        elif contribution > 0.2:
+            impact = "supported"
+        elif contribution > -0.2:
+            impact = "weakly affected"
+        elif contribution > -0.5:
+            impact = "opposed"
+        else:
+            impact = "strongly opposed"
+        
+        # Generate specific narratives
+        if 'similarity' in feature:
+            narrative.append(f"Face similarity of {value:.2%} {impact} the decision")
+        elif 'eyes_detected' in feature:
+            eyes = int(value)
+            narrative.append(f"Detection of {eyes} eye(s) {impact} the decision")
+        elif 'liveness_score' in feature:
+            narrative.append(f"Liveness score of {value:.2%} {impact} the decision")
+        elif 'face_area_ratio' in feature:
+            narrative.append(f"Face size ratio of {value:.2%} {impact} the decision")
+        elif 'sharpness' in feature:
+            narrative.append(f"Image sharpness of {value:.1f} {impact} the decision")
+        elif 'brightness' in feature:
+            narrative.append(f"Image brightness of {value:.1f} {impact} the decision")
+        else:
+            narrative.append(f"{feature.replace('_', ' ').title()} of {value:.3f} {impact} the decision")
+    
+    return narrative
 
 _FACENET_AVAILABLE = False
 _MTCNN = None
@@ -55,8 +189,21 @@ try:
             sim = _cosine_similarity(emb1, emb2)
             # threshold typical values: 0.6-0.8 (tune in production)
             match = sim >= 0.6
+            
+            # Generate SHAP explanation
+            features = {
+                'face_similarity': sim,
+                'embedding_confidence': min(np.linalg.norm(emb1), np.linalg.norm(emb2))
+            }
+            explanation = _generate_shap_explanation(features, 'match' if match else 'no_match')
+            
             logger.info(f"[FACE] Face match result: similarity={sim:.4f}, match={match}")
-            return {"similarity": round(sim, 4), "match": bool(match), "method": "facenet"}
+            return {
+                "similarity": round(sim, 4), 
+                "match": bool(match), 
+                "method": "facenet",
+                "explainability": explanation
+            }
         except Exception as e:
             logger.exception("Facenet matching failed: %s", e)
             return {"similarity": 0.0, "match": False, "method": "facenet", "error": str(e)}
@@ -162,8 +309,22 @@ except Exception:
 
             sim = _cosine_similarity(v1, v2)
             match = sim >= 0.45
+            
+            # Generate SHAP explanation for OpenCV fallback
+            features = {
+                'face_similarity': sim,
+                'face1_area': float(face1[2] * face1[3]),
+                'face2_area': float(face2[2] * face2[3])
+            }
+            explanation = _generate_shap_explanation(features, 'match' if match else 'no_match')
+            
             logger.info(f"[FACE-OPENCV] Match result: similarity={sim:.4f}, match={match}")
-            return {"similarity": round(sim, 4), "match": bool(match), "method": "opencv-fallback"}
+            return {
+                "similarity": round(sim, 4), 
+                "match": bool(match), 
+                "method": "opencv-fallback",
+                "explainability": explanation
+            }
         except Exception as e:
             logger.exception("OpenCV fallback matching failed: %s", e)
             return {"similarity": 0.0, "match": False, "method": "opencv-fallback", "error": str(e)}
@@ -260,6 +421,17 @@ except Exception:
             # Much stricter passing threshold
             passed = score >= 0.75 and len(eyes) >= 2
             
+            # Generate SHAP explanation for liveness
+            features = {
+                'liveness_score': score,
+                'face_area_ratio': face_area_ratio,
+                'eyes_detected': float(len(eyes)),
+                'face_sharpness': laplacian_var,
+                'face_brightness': mean_brightness,
+                'texture_variation': texture_std
+            }
+            explanation = _generate_shap_explanation(features, 'liveness_pass' if passed else 'liveness_fail')
+            
             meta = {
                 "face_area_ratio": round(face_area_ratio, 4), 
                 "eyes_detected": int(len(eyes)),
@@ -270,7 +442,13 @@ except Exception:
             }
             
             logger.info(f"[FACE-LIVENESS] Enhanced Score={score:.3f}, passed={passed}, eyes={len(eyes)}, area_ratio={face_area_ratio:.3f}")
-            return {"liveness_score": round(score, 3), "passed": bool(passed), "method": "opencv-strict", **meta}
+            return {
+                "liveness_score": round(score, 3), 
+                "passed": bool(passed), 
+                "method": "opencv-strict", 
+                "explainability": explanation,
+                **meta
+            }
             
         except Exception as e:
             logger.exception("Enhanced OpenCV liveness check failed: %s", e)
